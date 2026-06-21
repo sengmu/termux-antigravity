@@ -2,6 +2,7 @@
 
 # Termux Antigravity CLI Installer
 # Sets up a custom glibc runtime using proot to run agy on Termux.
+# Supports 100% dynamic paths for portable install.
 
 set -e
 
@@ -25,10 +26,11 @@ if [ "$ARCH" != "aarch64" ]; then
     exit 1
 fi
 
-# 2. Install dependencies
-echo -e "${BLUE}[1/5] Installing dependencies (proot, git, tmux, gzip)...${NC}"
+# 2. Install dependencies (Non-interactive)
+echo -e "${BLUE}[1/5] Installing dependencies (proot, git, tmux, gzip, ca-certificates)...${NC}"
+export DEBIAN_FRONTEND=noninteractive
 pkg update -y
-pkg install -y proot git tmux gzip curl
+pkg install -y -o Dpkg::Options::="--force-confold" proot git tmux gzip curl ca-certificates
 
 # 3. Create target directories
 echo -e "${BLUE}[2/5] Creating directories...${NC}"
@@ -52,9 +54,11 @@ else
     exit 1
 fi
 
-# 6. Add alias to shell profiles
+# 6. Add alias to shell profiles (Dynamic environment paths)
 echo -e "${BLUE}[5/5] Configuring shell aliases...${NC}"
-ALIAS_LINE="alias agy='LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 proot -b /data/data/com.termux/files/usr/etc/tls:/etc/ssl/certs -b /data/data/com.termux/files/usr/etc/resolv.conf:/etc/resolv.conf -b /data/data/com.termux/files/usr/etc/hosts:/etc/hosts -b /data/data/com.termux/files/home/.local/glibc:/lib /data/data/com.termux/files/home/.local/glibc/ld-linux-aarch64.so.1 /data/data/com.termux/files/home/.local/bin/agy'"
+
+# We use backslash before $ to write literal variable references ($PREFIX and $HOME) to shell files
+ALIAS_LINE="alias agy='LANG=C.UTF-8 LANGUAGE=C.UTF-8 LC_ALL=C.UTF-8 proot -b \$PREFIX/etc/tls:/etc/ssl/certs -b \$PREFIX/etc/resolv.conf:/etc/resolv.conf -b \$PREFIX/etc/hosts:/etc/hosts -b \$HOME/.local/glibc:/lib \$HOME/.local/glibc/ld-linux-aarch64.so.1 \$HOME/.local/bin/agy'"
 
 add_alias_to_file() {
     local file="$1"
@@ -66,7 +70,12 @@ add_alias_to_file() {
             echo "$ALIAS_LINE" >> "$file"
             echo -e "${GREEN}Added 'agy' alias to $file${NC}"
         else
-            echo -e "Alias 'agy' already configured in $file"
+            # If alias exists, update it to use the new dynamic path format
+            # Use temp file to replace
+            grep -v "alias agy=" "$file" > "$file.tmp"
+            echo "$ALIAS_LINE" >> "$file.tmp"
+            mv "$file.tmp" "$file"
+            echo -e "${GREEN}Updated 'agy' alias in $file to dynamic version${NC}"
         fi
     fi
 }
